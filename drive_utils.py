@@ -22,8 +22,8 @@ def authenticate_drive():
         )
     # 2. Streamlit Cloud Secrets kontrolü (üç tırnak arası metin)
     elif "service_account_json" in st.secrets:
-        # Metin olarak gelen JSON'ı sözlüğe (dict) dönüştürürüz
-        creds_dict = json.loads(st.secrets["service_account_json"])
+        # strict=False parametresi metin içindeki satır sonu karakteri hatalarını engeller
+        creds_dict = json.loads(st.secrets["service_account_json"], strict=False)
         creds = service_account.Credentials.from_service_account_info(
             creds_dict, scopes=SCOPES
         )
