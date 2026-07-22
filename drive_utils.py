@@ -9,20 +9,13 @@ from googleapiclient.http import MediaIoBaseUpload
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 def authenticate_drive():
-    """
-    Lokalde 'service_account.json' dosyasından,
-    Streamlit Cloud'da 'st.secrets["service_account_json"]' alanından okuma yapar.
-    """
     creds = None
     
-    # 1. Yerel bilgisayar kontrolü (dosya varsa)
     if os.path.exists('service_account.json'):
         creds = service_account.Credentials.from_service_account_file(
             'service_account.json', scopes=SCOPES
         )
-    # 2. Streamlit Cloud Secrets kontrolü (üç tırnak arası metin)
     elif "service_account_json" in st.secrets:
-        # strict=False parametresi metin içindeki satır sonu karakteri hatalarını engeller
         creds_dict = json.loads(st.secrets["service_account_json"], strict=False)
         creds = service_account.Credentials.from_service_account_info(
             creds_dict, scopes=SCOPES
@@ -49,7 +42,8 @@ def upload_file_to_drive(file_bytes, file_name, folder_id):
     uploaded_file = service.files().create(
         body=file_metadata,
         media_body=media,
-        fields='id, name, webViewLink'
+        fields='id, name, webViewLink',
+        supportsAllDrives=True
     ).execute()
     
     return uploaded_file
@@ -60,7 +54,9 @@ def list_files_in_folder(folder_id):
     
     results = service.files().list(
         q=query,
-        fields="files(id, name, webViewLink, createdTime)"
+        fields="files(id, name, webViewLink, createdTime)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True
     ).execute()
     
     return results.get('files', [])
