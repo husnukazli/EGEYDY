@@ -16,12 +16,18 @@ def get_drive_service():
     return build('drive', 'v3', credentials=creds)
 
 def upload_file_to_drive(file_bytes, file_name, folder_id=None, mime_type="application/octet-stream"):
-    """Dosyayı Google Drive üzerine yükler."""
+    """
+    Dosyayı Google Drive üzerine yükler.
+    folder_id belirtilmezse otomatik olarak Secrets altındaki 'folder_id' kullanılır.
+    """
     service = get_drive_service()
     
+    # Özel bir folder_id gelmediyse Secrets'taki varsayılan ID'yi kullan
+    target_folder_id = folder_id or st.secrets.get("folder_id")
+    
     file_metadata = {'name': file_name}
-    if folder_id:
-        file_metadata['parents'] = [folder_id]
+    if target_folder_id:
+        file_metadata['parents'] = [target_folder_id]
         
     media = MediaIoBaseUpload(
         io.BytesIO(file_bytes),
@@ -38,9 +44,16 @@ def upload_file_to_drive(file_bytes, file_name, folder_id=None, mime_type="appli
     return uploaded_file
 
 def list_files_in_folder(folder_id=None):
-    """Belirtilen klasördeki dosyaları listeler."""
+    """
+    Belirtilen klasördeki dosyaları listeler.
+    folder_id belirtilmezse otomatik olarak Secrets altındaki 'folder_id' kullanılır.
+    """
     service = get_drive_service()
-    query = f"'{folder_id}' in parents and trashed = false" if folder_id else "trashed = false"
+    
+    # Özel bir folder_id gelmediyse Secrets'taki varsayılan ID'yi kullan
+    target_folder_id = folder_id or st.secrets.get("folder_id")
+    
+    query = f"'{target_folder_id}' in parents and trashed = false" if target_folder_id else "trashed = false"
     
     results = service.files().list(
         q=query,
