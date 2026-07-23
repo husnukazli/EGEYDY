@@ -67,17 +67,25 @@ if not st.session_state["logged_in"]:
 
     st.divider()
     
-    # --- YÖNETİCİ GİRİŞİ (EN ALTTA) ---
+# --- YÖNETİCİ GİRİŞİ (EN ALTTA) ---
     with st.expander("🛡️ Yönetici Girişi"):
-        admin_email = st.text_input("Yönetici E-posta", key="admin_email")
-        admin_pass = st.text_input("Yönetici Şifre", type="password", key="admin_pass")
+        st.info("Sadece yönetici şifrenizi girerek giriş yapabilirsiniz.")
+        admin_pass = st.text_input("Yönetici Şifresi", type="password", key="admin_pass")
+        
         if st.button("Yönetici Olarak Gir"):
             users = load_users()
-            if admin_email in users and users[admin_email]["role"] == "admin" and users[admin_email]["password"] == hash_password(admin_pass):
-                 st.session_state.update({"logged_in": True, "email": admin_email, "role": "admin"})
-                 st.rerun()
-            else:
-                 st.error("Yetkisiz giriş veya hatalı şifre!")
+            admin_logged_in = False
+            
+            # Sistemdeki admin kullanıcısını arka planda bulup sadece şifresini kontrol ediyoruz
+            for mail, data in users.items():
+                if data["role"] == "admin" and data["password"] == hash_password(admin_pass):
+                    st.session_state.update({"logged_in": True, "email": "Yönetici", "role": "admin"})
+                    admin_logged_in = True
+                    st.rerun()
+                    break
+                    
+            if not admin_logged_in:
+                 st.error("Hatalı yönetici şifresi!")
                  
     st.stop()
 
