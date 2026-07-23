@@ -80,7 +80,6 @@ with st.sidebar:
     st.write(f"👤 **{st.session_state['ad_soyad']}**")
     role_color = "🟢" if st.session_state['role'] in ['onaylı', 'admin'] else "🟠"
     
-    # Rol ismini İngilizce göster
     display_role = "Approved" if st.session_state['role'] == "onaylı" else "Pending" if st.session_state['role'] == "beklemede" else "Admin"
     st.write(f"🔑 Status: {role_color} {display_role.upper()}")
     
@@ -122,53 +121,30 @@ with tab_upload:
         f_week = st.selectbox("4. Week", [f"Week {i}" for i in range(1, 15)], key="yk_hafta")
         f_type = st.selectbox("5. Type of Material", ["Link (Kahoot, Bamboozle, etc.)", "Worksheet", "Exam Practice", "Presentation", "Games & Ideas"], key="yk_turu")
         
-        # Link mi Dosya mı kontrolü
-        is_link = "Link" in f_type
-        
-        if is_link:
-            link_title = st.text_input("Enter Link Title (e.g., Week 2 Kahoot Quiz)")
-            link_url = st.text_input("Enter URL (e.g., https://kahoot.it/...)")
-            uploaded_file = None
-        else:
-            # SADECE BURADA İLGİLİ UZANTILARI GÜNCELLEDİM (pdf, ppt, pptx eklendi)
-            uploaded_file = st.file_uploader("Select File", type=["pdf", "ppt", "pptx", "docx", "xlsx", "mp3", "jpg", "png", "jpeg"])
-            link_title = ""
-            link_url = ""
+        # Standart dosya yükleme alanı (Link kutuları tamamen kaldırıldı)
+        uploaded_file = st.file_uploader("Select File", type=["pdf", "ppt", "pptx", "docx", "xlsx", "mp3", "jpg", "png", "jpeg"])
         
         if st.button("🚀 Share to Pool", use_container_width=True):
             if f_level == "Select..." or f_class == "Select...":
                 st.error("Level and Class selection is required.")
+            elif not uploaded_file:
+                st.error("Please select a file to upload.")
             else:
                 with st.spinner("Uploading..."):
                     try:
-                        final_file_url = ""
-                        final_file_name = ""
+                        file_path = f"{f_level}/{f_week}/{uploaded_file.name}"
                         
-                        if is_link:
-                            if not link_title or not link_url:
-                                st.error("Please enter both Link Title and URL.")
-                                st.stop()
-                            final_file_name = link_title
-                            final_file_url = link_url if link_url.startswith("http") else f"https://{link_url}"
-                        else:
-                            if not uploaded_file:
-                                st.error("Please select a file to upload.")
-                                st.stop()
-                                
-                            file_path = f"{f_level}/{f_week}/{uploaded_file.name}"
-                            
-                            # Content type ayarı tarayıcıda direkt açılması için (özellikle pdf ve resimler)
-                            content_type = uploaded_file.type if uploaded_file.type else "application/octet-stream"
-                            
-                            supabase.storage.from_("materyaller").upload(
-                                path=file_path, 
-                                file=uploaded_file.getvalue(), 
-                                file_options={"content_type": content_type, "upsert": "true"}
-                            )
-                            final_file_url = supabase.storage.from_("materyaller").get_public_url(file_path)
-                            final_file_name = uploaded_file.name
+                        content_type = uploaded_file.type if uploaded_file.type else "application/octet-stream"
                         
-                        # Veritabanına kayıt (Schema aynı, sadece menü isimleri İngilizce gitti)
+                        supabase.storage.from_("materyaller").upload(
+                            path=file_path, 
+                            file=uploaded_file.getvalue(), 
+                            file_options={"content_type": content_type, "upsert": "true"}
+                        )
+                        final_file_url = supabase.storage.from_("materyaller").get_public_url(file_path)
+                        final_file_name = uploaded_file.name
+                        
+                        # Veritabanına kayıt
                         supabase.table("files").insert({
                             "file_name": final_file_name, 
                             "file_url": final_file_url, 
@@ -228,9 +204,6 @@ with tab_search:
                         if st.session_state["role"] == "beklemede":
                             c2.info("🔒 Pending Approval")
                         else:
-                            # Link ise direkt git butonu, dosya ise View ve Download butonları
-                            if "Link" in file['materyal_turu']:
-                                c2.markdown(f"[🔗 Go to Link]({file['file_url']})", unsafe_allow_html=True)
-                            else:
-                                c2.markdown(f"[👁️ View]({file['file_url']}) | [⬇️ Download]({file['file_url']}?download=)", unsafe_allow_html=True)
+                            # Artık tüm materyaller dosya olduğu için sadece View ve Download var
+                            c2.markdown(f"[👁️ View]({file['file_url']}) | [⬇️ Download]({file['file_url']}?download=)", unsafe_allow_html=True)
                         st.divider()
