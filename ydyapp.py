@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import os
 import hashlib
+from drive_utils import upload_file_to_drive, list_files_in_folder
 
 # --- AYARLAR VE VERİTABANI ---
 USER_FILE = "users.json"
@@ -46,7 +47,7 @@ if not st.session_state["logged_in"]:
             else:
                 st.error("Hatalı e-posta veya şifre!")
 
-    # --- DOĞRUDAN KAYIT OL ---
+    # --- KAYIT OL ---
     with tab2:
         reg_email = st.text_input("E-posta Adresiniz", key="reg_email")
         reg_pass = st.text_input("Şifre Belirleyin", type="password", key="reg_pass")
@@ -61,29 +62,24 @@ if not st.session_state["logged_in"]:
                     "role": "beklemede" 
                 }
                 save_users(users)
-                st.success("Kayıt başarılı! Yöneticinin onayından sonra dosya yükleme yetkiniz açılacaktır. Şimdi 'Giriş Yap' sekmesinden girebilirsiniz.")
+                st.success("Kayıt başarılı! Yöneticinin onayından sonra dosya yükleme yetkiniz açılacaktır.")
             else:
                 st.error("Lütfen e-posta ve şifre alanlarını doldurun.")
 
     st.divider()
     
-# --- YÖNETİCİ GİRİŞİ (EN ALTTA) ---
+    # --- YÖNETİCİ GİRİŞİ (ŞİFRE İLE) ---
     with st.expander("🛡️ Yönetici Girişi"):
-        st.info("Sadece yönetici şifrenizi girerek giriş yapabilirsiniz.")
         admin_pass = st.text_input("Yönetici Şifresi", type="password", key="admin_pass")
-        
         if st.button("Yönetici Olarak Gir"):
             users = load_users()
             admin_logged_in = False
-            
-            # Sistemdeki admin kullanıcısını arka planda bulup sadece şifresini kontrol ediyoruz
             for mail, data in users.items():
                 if data["role"] == "admin" and data["password"] == hash_password(admin_pass):
                     st.session_state.update({"logged_in": True, "email": "Yönetici", "role": "admin"})
                     admin_logged_in = True
                     st.rerun()
                     break
-                    
             if not admin_logged_in:
                  st.error("Hatalı yönetici şifresi!")
                  
@@ -103,7 +99,7 @@ with st.sidebar:
 st.title("📚 YDY Materyal Havuzu")
 
 # ==========================================
-# 3. YÖNETİCİ PANELİ (SADECE ADMİN GÖRÜR)
+# 3. YÖNETİCİ PANELİ
 # ==========================================
 if st.session_state["role"] == "admin":
     st.warning("🛠️ **Yönetici Paneli**")
@@ -125,42 +121,77 @@ if st.session_state["role"] == "admin":
     st.divider()
 
 # ==========================================
-# 4. DOSYA YÜKLEME VE YDY KATEGORİ SİSTEMİ
+# 4. DOSYA YÜKLEME VE YDY KATEGORİ SİSTEMİ (GERÇEK DRIVE API)
 # ==========================================
 st.subheader("📤 Yeni Materyal Yükle")
 
 if st.session_state["role"] in ["onaylı", "admin"]:
     kur_secimi = st.selectbox("1. Kur Seçiniz", ["Seçiniz...", "Alpha", "Beta", "Gamma", "Delta", "Yan Destek / Kulüpler"])
     
+    alt_beceri = ""
+    omurga = ""
     if kur_secimi not in ["Seçiniz...", "Yan Destek / Kulüpler"]:
         omurga = st.selectbox("2. Ders Türü", ["Integrated Skills (Bütünleşik)", "Main Skills (Ana Beceriler)"])
-        
         if omurga == "Integrated Skills (Bütünleşik)":
             alt_beceri = st.selectbox("3. Beceri", ["Grammar", "Vocabulary"])
         else:
             alt_beceri = st.selectbox("3. Beceri", ["Reading & Writing", "Listening & Speaking"])
-            
     elif kur_secimi == "Yan Destek / Kulüpler":
-        alt_beceri = st.selectbox("Destek Kanalı", ["Delta A2 & Gamma B1 Remedial", "Translation Workshop", "Speaking / Read, Walk, Speak Club"])
         omurga = "Kulüp/Destek"
+        alt_beceri = st.selectbox("Destek Kanalı", ["Delta A2 & Gamma B1 Remedial", "Translation Workshop", "Speaking / Read, Walk, Speak Club"])
         
     hafta = st.selectbox("4. Hafta", [f"{i}. Hafta" for i in range(1, 15)])
     materyal_turu = st.selectbox("5. Materyal Türü", ["Worksheet", "Quiz", "Sınav Örneği", "Answer Key", "Okuma Parçası", "Ses Dosyası (Listening)"])
     
-    uploaded_file = st.file_uploader("Dosya Seçin", type=["pdf", "docx", "xlsx", "mp3", "jpg"])
+    uploaded_file = st.file_uploader("Dosya Seçin", type=["pdf", "docx", "xlsx", "mp3", "jpg", "png"])
     
-    if st.button("🚀 Dosyayı Etiketle ve Yükle"):
+    if st.button("🚀 Dosyayı Drive'a Yükle"):
         if kur_secimi != "Seçiniz..." and uploaded_file:
-            st.success("Dosya yükleme fonksiyonu (Drive API) buraya entegre edilecek.")
+            with st.spinner("Dosya Google Drive'a yükleniyor ve etiketleniyor..."):
+                try:
+                    file_bytes = uploaded_file.getvalue()
+                    
+                    # Dosya adına ve açıklamasına etiketleri işliyoruz ki Drive'da da net görünsün
+                    etiketli_isim = f"[{kur_secimi}] [{hafta}] [{materyal_turu}] {uploaded_file.name}"
+                    aciklama = f"Kur: {kur_secimi} | Ders: {omurga} | Alt Beceri: {alt_beceri} | Hafta: {hafta} | Tür: {materyal_turu} | Yükleyen: {st.session_state['email']}"
+                    
+                    # Gerçek Drive API çağrısı
+                    upload_file_to_drive(
+                        file_bytes=file_bytes,
+                        file_name=etiketli_isim,
+                        mime_type=uploaded_file.type
+                    )
+                    st.success(f"✅ '{uploaded_file.name}' başarıyla havuzdaki yerini aldı!")
+                except Exception as e:
+                    st.error(f"Yükleme sırasında hata oluştu: {e}")
         else:
-            st.error("Lütfen bir Kur ve Dosya seçin.")
+            st.error("Lütfen bir Kur ve Yüklenecek Dosya seçin.")
 else:
-    st.info("⏳ Dosya yükleme yetkiniz yönetici tarafından onaylandıktan sonra aktif olacaktır.")
+    st.info("⏳ Dosya yükleme yetkiniz yönetici onayından sonra aktif olacaktır.")
 
 st.divider()
 
 # ==========================================
-# 5. DOSYALARI LİSTELEME
+# 5. DOSYALARI LİSTELEME VE GÖRÜNTÜLEME
 # ==========================================
 st.subheader("📂 Havuzdaki Materyaller")
-st.write("Filtreleme ve dosya listeleme modülü (Drive listeleme fonksiyonu) burada çalışacak.")
+
+if st.button("🔄 Dosyaları Listele"):
+    with st.spinner("Drive'daki dosyalar getiriliyor..."):
+        try:
+            files = list_files_in_folder()
+            if not files:
+                st.info("Klasörde henüz hiç dosya bulunmuyor.")
+            else:
+                st.success(f"Toplam {len(files)} adet dosya bulundu.")
+                for file in files:
+                    file_name = file.get('name')
+                    file_link = file.get('webViewLink')
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.write(f"📄 **{file_name}**")
+                    with col2:
+                        st.markdown(f"[🔗 Görüntüle]({file_link})", unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Dosyalar listelenirken hata oluştu: {e}")
