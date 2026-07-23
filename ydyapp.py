@@ -126,7 +126,7 @@ if st.session_state["role"] == "admin":
 # ==========================================
 # 3. DOSYA YÜKLEME BÖLÜMÜ
 # ==========================================
-# Yönetici dosya yüklemesin mantığına göre sadece "onaylı" hocalar yükleyebilir
+# Sadece onaylı hocalar dosya yükleyebilir (Yönetici veya bekleyenler yükleyemez)
 if st.session_state["role"] == "onaylı":
     st.subheader("📤 Yeni Materyal Yükle")
     kur_secimi = st.selectbox("1. Kur Seçiniz", ["Seçiniz...", "Alpha", "Beta", "Gamma", "Delta", "Yan Destek / Kulüpler"])
@@ -178,52 +178,56 @@ if st.session_state["role"] == "onaylı":
         else:
             st.error("Lütfen bir Kur ve Yüklenecek Dosya seçin.")
     st.divider()
-elif st.session_state["role"] == "beklemede":
-    st.info("⏳ Dosya yükleme ve görüntüleme yetkiniz yönetici onayından sonra aktif olacaktır.")
 
 # ==========================================
 # 4. FİLTRELEME VE GÖRÜNTÜLEME BÖLÜMÜ
 # ==========================================
-if st.session_state["role"] in ["onaylı", "admin"]:
-    st.subheader("📂 Havuzdaki Materyaller ve Filtreleme")
+# Bu bölümü herkes görür (Beklemede olanlar dahil)
+st.subheader("📂 Havuzdaki Materyaller ve Filtreleme")
 
-    f_col1, f_col2 = st.columns(2)
-    with f_col1:
-        filtre_kur = st.selectbox("Filtre - Kur", ["Tümü", "Alpha", "Beta", "Gamma", "Delta", "Yan Destek / Kulüpler"])
-    with f_col2:
-        filtre_hafta = st.selectbox("Filtre - Hafta", ["Tümü"] + [f"{i}. Hafta" for i in range(1, 15)])
+f_col1, f_col2 = st.columns(2)
+with f_col1:
+    filtre_kur = st.selectbox("Filtre - Kur", ["Tümü", "Alpha", "Beta", "Gamma", "Delta", "Yan Destek / Kulüpler"])
+with f_col2:
+    filtre_hafta = st.selectbox("Filtre - Hafta", ["Tümü"] + [f"{i}. Hafta" for i in range(1, 15)])
 
-    if st.button("🔄 Dosyaları Listele"):
-        with st.spinner("Veritabanı taranıyor..."):
-            try:
-                query = supabase.table("files").select("*")
-                if filtre_kur != "Tümü":
-                    query = query.eq("kur", filtre_kur)
-                if filtre_hafta != "Tümü":
-                    query = query.eq("hafta", filtre_hafta)
-                    
-                response = query.execute()
-                files = response.data
+if st.button("🔄 Dosyaları Listele"):
+    with st.spinner("Veritabanı taranıyor..."):
+        try:
+            query = supabase.table("files").select("*")
+            if filtre_kur != "Tümü":
+                query = query.eq("kur", filtre_kur)
+            if filtre_hafta != "Tümü":
+                query = query.eq("hafta", filtre_hafta)
                 
-                if not files:
-                    st.warning("Seçtiğiniz kriterlere uygun materyal bulunamadı.")
-                else:
-                    st.success(f"Eşleşen toplam {len(files)} adet dosya listeleniyor.")
-                    st.write("---")
+            response = query.execute()
+            files = response.data
+            
+            if not files:
+                st.warning("Seçtiğiniz kriterlere uygun materyal bulunamadı.")
+            else:
+                st.success(f"Eşleşen toplam {len(files)} adet dosya listeleniyor.")
+                st.write("---")
+                
+                for file in files:
+                    file_name = file.get('file_name')
+                    file_link = file.get('file_url')
+                    uploader = file.get('uploaded_by')
+                    kur = file.get('kur')
+                    hafta = file.get('hafta')
+                    turu = file.get('materyal_turu')
                     
-                    for file in files:
-                        file_name = file.get('file_name')
-                        file_link = file.get('file_url')
-                        uploader = file.get('uploaded_by')
-                        kur = file.get('kur')
-                        hafta = file.get('hafta')
-                        turu = file.get('materyal_turu')
-                        
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.write(f"📄 **{file_name}**  \n*<small>Kur: {kur} | Hafta: {hafta} | Tür: {turu} | Yükleyen: {uploader}</small>*", unsafe_allow_html=True)
-                        with col2:
-                            st.markdown(f"[🔗 Görüntüle]({file_link})", unsafe_allow_html=True)
+                    col1, col2 = st.columns([3, 2])
+                    with col1:
+                        st.write(f"📄 **{file_name}**  \n*<small>Kur: {kur} | Hafta: {hafta} | Tür: {turu} | Yükleyen: {uploader}</small>*", unsafe_allow_html=True)
+                    
+                    with col2:
+                        # Eğer kullanıcı bekliyorsa linkler yerine kilit uyarısı görsün
+                        if st.session_state["role"] == "beklemede":
+                            st.info("🔒 Görüntülemek için onay bekliyor")
+                        else:
+                            # Onaylı kullanıcılara hem sayfada görüntüleme hem de direkt indirme linki sunulur
+                            st.markdown(f"[👁️ Görüntüle]({file_link}) &nbsp;&nbsp;|&nbsp;&nbsp; [⬇️ İndir]({file_link}?download=)", unsafe_allow_html=True)
                             
-            except Exception as e:
-                st.error(f"Dosyalar listelenirken hata oluştu: {e}")
+        except Exception as e:
+            st.error(f"Dosyalar listelenirken hata oluştu: {e}")
