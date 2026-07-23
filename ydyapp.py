@@ -32,17 +32,16 @@ if not st.session_state["logged_in"]:
         login_email = st.text_input("E-posta Adresiniz", key="log_email")
         login_pass = st.text_input("Şifreniz", type="password", key="log_pass")
         if st.button("Giriş Yap", use_container_width=True):
-            if login_email == "admin" and login_pass == "admin123":
-                st.session_state.update({"logged_in": True, "email": "Yönetici", "role": "admin"})
-                st.rerun()
-            else:
-                response = supabase.table("users").select("*").eq("email", login_email).execute()
+            try:
+                response = supabase.table("app_users").select("*").eq("email", login_email).execute()
                 users = response.data
                 if users and users[0]["password"] == hash_password(login_pass):
                     st.session_state.update({"logged_in": True, "email": login_email, "role": users[0]["role"]})
                     st.rerun()
                 else:
                     st.error("Hatalı e-posta veya şifre!")
+            except Exception as e:
+                st.error(f"Giriş hatası: {e}")
 
     with tab2:
         reg_email = st.text_input("E-posta Adresiniz", key="reg_email")
@@ -50,17 +49,19 @@ if not st.session_state["logged_in"]:
         
         if st.button("Kayıt Ol", use_container_width=True):
             if reg_email and reg_pass:
-                # Kontrol et: Bu mail var mı?
-                existing = supabase.table("users").select("*").eq("email", reg_email).execute()
-                if existing.data:
-                    st.warning("Bu e-posta zaten kayıtlı!")
-                else:
-                    supabase.table("users").insert({
-                        "email": reg_email,
-                        "password": hash_password(reg_pass),
-                        "role": "beklemede"
-                    }).execute()
-                    st.success("Kayıt başarılı! Yöneticinin onayından sonra dosya yükleme yetkiniz açılacaktır.")
+                try:
+                    existing = supabase.table("app_users").select("*").eq("email", reg_email).execute()
+                    if existing.data:
+                        st.warning("Bu e-posta zaten kayıtlı!")
+                    else:
+                        supabase.table("app_users").insert({
+                            "email": reg_email,
+                            "password": hash_password(reg_pass),
+                            "role": "beklemede"
+                        }).execute()
+                        st.success("Kayıt başarılı! Yöneticinin onayından sonra dosya yükleme yetkiniz açılacaktır.")
+                except Exception as e:
+                    st.error(f"Kayıt hatası: {e}")
             else:
                 st.error("Lütfen e-posta ve şifre alanlarını doldurun.")
 
@@ -69,7 +70,7 @@ if not st.session_state["logged_in"]:
     with st.expander("🛡️ Yönetici Girişi"):
         admin_pass = st.text_input("Yönetici Şifresi", type="password", key="admin_pass")
         if st.button("Yönetici Olarak Gir"):
-            if admin_pass == "admin123": # Varsayılan yönetici şifresi
+            if admin_pass == "admin123": 
                 st.session_state.update({"logged_in": True, "email": "Yönetici", "role": "admin"})
                 st.rerun()
             else:
@@ -93,21 +94,24 @@ st.title("📚 EÜ YDY Materyal Havuzu")
 # Yönetici Paneli
 if st.session_state["role"] == "admin":
     st.warning("🛠️ **Yönetici Paneli**")
-    res = supabase.table("users").select("*").eq("role", "beklemede").execute()
-    bekleyenler = res.data
-    
-    if bekleyenler:
-        st.write("⏳ **Onay Bekleyen Kullanıcılar:**")
-        for user in bekleyenler:
-            mail = user["email"]
-            col1, col2 = st.columns([3, 1])
-            col1.write(f"- {mail}")
-            if col2.button("Yetki Ver (Onayla)", key=f"onay_{user['id']}"):
-                supabase.table("users").update({"role": "onaylı"}).eq("id", user["id"]).execute()
-                st.success(f"{mail} yetkilendirildi!")
-                st.rerun()
-    else:
-        st.info("Onay bekleyen kullanıcı bulunmuyor.")
+    try:
+        res = supabase.table("app_users").select("*").eq("role", "beklemede").execute()
+        bekleyenler = res.data
+        
+        if bekleyenler:
+            st.write("⏳ **Onay Bekleyen Kullanıcılar:**")
+            for user in bekleyenler:
+                mail = user["email"]
+                col1, col2 = st.columns([3, 1])
+                col1.write(f"- {mail}")
+                if col2.button("Yetki Ver (Onayla)", key=f"onay_{user['id']}"):
+                    supabase.table("app_users").update({"role": "onaylı"}).eq("id", user["id"]).execute()
+                    st.success(f"{mail} yetkilendirildi!")
+                    st.rerun()
+        else:
+            st.info("Onay bekleyen kullanıcı bulunmuyor.")
+    except Exception as e:
+        st.error(f"Yönetici paneli hatası: {e}")
     st.divider()
 
 # ==========================================
