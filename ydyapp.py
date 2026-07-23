@@ -17,6 +17,9 @@ st.set_page_config(page_title="Material Share", page_icon="📚", layout="wide")
 if "logged_in" not in st.session_state:
     st.session_state.update({"logged_in": False, "email": "", "ad_soyad": "", "role": ""})
 
+if "edit_mode" not in st.session_state:
+    st.session_state.edit_mode = None
+
 # ==========================================
 # 1. LOGIN & REGISTER SCREEN
 # ==========================================
@@ -114,14 +117,12 @@ with tab_upload:
     if st.session_state["role"] == "onaylı":
         st.markdown("### Share a New Material")
         
-        # Form inputs
         f_level = st.selectbox("1. Level", ["Select...", "Alpha", "Beta", "Gamma", "Delta"], key="yk_kur")
         f_class = st.selectbox("2. Class", ["Select...", "Integrated Skills 1", "Integrated Skills 2"], key="yk_omurga")
         f_focus = st.selectbox("3. Focus", ["Speaking", "Reading", "Listening", "Writing", "Vocabulary", "Use of English"], key="yk_beceri")
         f_week = st.selectbox("4. Week", [f"Week {i}" for i in range(1, 15)], key="yk_hafta")
         f_type = st.selectbox("5. Type of Material", ["Link (Kahoot, Bamboozle, etc.)", "Worksheet", "Exam Practice", "Presentation", "Games & Ideas"], key="yk_turu")
         
-        # Standart dosya yükleme alanı (Link kutuları tamamen kaldırıldı)
         uploaded_file = st.file_uploader("Select File", type=["pdf", "ppt", "pptx", "docx", "xlsx", "mp3", "jpg", "png", "jpeg"])
         
         if st.button("🚀 Share to Pool", use_container_width=True):
@@ -133,7 +134,6 @@ with tab_upload:
                 with st.spinner("Uploading..."):
                     try:
                         file_path = f"{f_level}/{f_week}/{uploaded_file.name}"
-                        
                         content_type = uploaded_file.type if uploaded_file.type else "application/octet-stream"
                         
                         supabase.storage.from_("materyaller").upload(
@@ -142,12 +142,11 @@ with tab_upload:
                             file_options={"content_type": content_type, "upsert": "true"}
                         )
                         final_file_url = supabase.storage.from_("materyaller").get_public_url(file_path)
-                        final_file_name = uploaded_file.name
                         
-                        # Veritabanına kayıt
                         supabase.table("files").insert({
-                            "file_name": final_file_name, 
+                            "file_name": uploaded_file.name, 
                             "file_url": final_file_url, 
+                            "file_path": file_path, # Storage'dan silmek için gerekli
                             "kur": f_level, 
                             "omurga": f_class, 
                             "alt_beceri": f_focus, 
@@ -166,7 +165,7 @@ with tab_upload:
         st.info("Admins cannot upload files. Please log in with a teacher account.")
 
 # ==========================================
-# SEARCH & DOWNLOAD TAB
+# SEARCH, DOWNLOAD, EDIT & DELETE TAB
 # ==========================================
 with tab_search:
     st.markdown("### Filter Materials")
@@ -182,28 +181,71 @@ with tab_search:
         s_type = st.selectbox("Type of Material", ["All", "Link (Kahoot, Bamboozle, etc.)", "Worksheet", "Exam Practice", "Presentation", "Games & Ideas"], key="ara_turu")
 
     if st.button("🔄 Search & List", use_container_width=True):
-        with st.spinner("Searching..."):
-            query = supabase.table("files").select("*")
-            if s_level != "All": query = query.eq("kur", s_level)
-            if s_class != "All": query = query.eq("omurga", s_class)
-            if s_focus != "All": query = query.eq("alt_beceri", s_focus)
-            if s_week != "All": query = query.eq("hafta", s_week)
-            if s_type != "All": query = query.eq("materyal_turu", s_type)
-            
-            files = query.execute().data
-            
-            if not files:
-                st.warning("No materials found for these filters.")
-            else:
-                st.success(f"{len(files)} material(s) found.")
-                for file in files:
+        st.session_state.edit_mode = None # Yeni aramada düzenleme modunu sıfırla
+        
+    with st.spinner("Searching..."):
+        query = supabase.table("files").select("*")
+        if s_level != "All": query = query.eq("kur", s_level)
+        if s_class != "All": query = query.eq("omurga", s_class)
+        if s_focus != "All": query = query.eq("alt_beceri", s_focus)
+        if s_week != "All": query = query.eq("hafta", s_week)
+        if s_type != "All": query = query.eq("materyal_turu", s_type)
+        
+        files = query.execute().data
+        
+        if not files:
+            st.warning("No materials found for these filters.")
+        else:
+            st.success(f"{len(files)} material(s) found.")
+            for file in files:
+                
+                # EĞER YÖNETİCİ DÜZENLEME (EDIT) MODUNDAYSA
+                if st.session_state.edit_mode == file['id']:
+                    with st.expander(f"✏️ Editing: {file['file_name']}", expanded=True):
+                        e_level = st.selectbox("New Level", ["Alpha", "Beta", "Gamma", "Delta"], index=["Alpha", "Beta", "Gamma", "Delta"].index(file['kur']), key=f"el_{file['id']}")
+                        e_class = st.selectbox("New Class", ["Integrated Skills 1", "Integrated Skills 2"], index=["Integrated Skills 1", "Integrated Skills 2"].index(file['omurga']), key=f"ec_{file['id']}")
+                        focus_opts = ["Speaking", "Reading", "Listening", "Writing", "Vocabulary", "Use of English"]
+                        safe_focus_idx = focus_opts.index(file['alt_beceri']) if file['alt_beceri'] in focus_opts else 0
+                        e_focus = st.selectbox("New Focus", focus_opts, index=safe_focus_idx, key=f"ef_{file['id']}")
+                        
+                        colA, colB = st.columns(2)
+                        with colA:
+                            if st.button("💾 Save Changes", key=f"save_{file['id']}", use_container_width=True):
+                                supabase.table("files").update({"kur": e_level, "omurga": e_class, "alt_beceri": e_focus}).eq("id", file['id']).execute()
+                                st.session_state.edit_mode = None
+                                st.rerun()
+                        with colB:
+                            if st.button("❌ Cancel", key=f"cancel_{file['id']}", use_container_width=True):
+                                st.session_state.edit_mode = None
+                                st.rerun()
+                
+                # NORMAL GÖRÜNÜM
+                else:
                     with st.container():
-                        c1, c2 = st.columns([3, 1])
+                        c1, c2, c3 = st.columns([6, 2, 2])
                         c1.markdown(f"📄 **{file['file_name']}**<br><small>{file['kur']} | {file['omurga']} | {file.get('alt_beceri','')} | {file['hafta']} | {file['materyal_turu']} <br> Uploaded by: {file['uploaded_by']}</small>", unsafe_allow_html=True)
                         
                         if st.session_state["role"] == "beklemede":
                             c2.info("🔒 Pending Approval")
                         else:
-                            # Artık tüm materyaller dosya olduğu için sadece View ve Download var
                             c2.markdown(f"[👁️ View]({file['file_url']}) | [⬇️ Download]({file['file_url']}?download=)", unsafe_allow_html=True)
+                        
+                        # SİLME VE DÜZENLEME YETKİLERİ
+                        if st.session_state["role"] == "admin" or st.session_state["ad_soyad"] == file['uploaded_by']:
+                            with c3:
+                                if st.session_state["role"] == "admin":
+                                    if st.button("✏️ Edit", key=f"edit_{file['id']}", help="Change category"):
+                                        st.session_state.edit_mode = file['id']
+                                        st.rerun()
+                                        
+                                if st.button("🗑️ Delete", key=f"del_{file['id']}"):
+                                    try:
+                                        # 1. Storage'dan sil
+                                        if file.get("file_path"):
+                                            supabase.storage.from_("materyaller").remove([file["file_path"]])
+                                        # 2. Veritabanından sil
+                                        supabase.table("files").delete().eq("id", file['id']).execute()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error deleting file: {e}")
                         st.divider()
