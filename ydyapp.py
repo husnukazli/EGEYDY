@@ -1,51 +1,61 @@
 import streamlit as st
 from drive_utils import upload_file_to_drive, list_files_in_folder
 
-st.set_page_config(page_title="Drive Bağlantı Testi", layout="centered")
+# Sayfa ayarları
+st.set_page_config(page_title="Materyal Havuzu", page_icon="📚", layout="centered")
 
-st.title("🧪 Google Drive Bağlantı & Yükleme Testi")
-st.write("Bu ekran sistemin havuzla bağlantısını test etmek için geçici olarak oluşturulmuştur.")
+st.title("📚 Öğretmen Materyal Havuzu")
+st.write("Drive'a gitmeden tüm materyallerinizi buradan yükleyebilir ve görüntüleyebilirsiniz.")
 
-# 1. Drive Klasör ID'sini Alalım
-folder_id = st.text_input("Google Drive Klasör ID'sini Buraya Yapıştırın:", value="")
+# --- BÖLÜM 1: DOSYA YÜKLEME ---
+st.subheader("📤 Yeni Dosya Yükle")
+uploaded_file = st.file_uploader("Yüklemek istediğiniz dosyayı seçin", type=["pdf", "docx", "xlsx", "txt", "png", "jpg", "mp3", "mp4"])
 
-if folder_id:
-    st.divider()
-    
-    # 2. Dosya Yükleme Bölümü
-    st.subheader("1. Havuza Dosya Yükle")
-    uploaded_file = st.file_uploader("Bir test dosyası seçin (PDF, Word, Görsel vs.):")
-    
+if st.button("🚀 Dosyayı Drive'a Yükle"):
     if uploaded_file is not None:
-        if st.button("Seçili Dosyayı Drive'a Gönder"):
-            with st.spinner("Dosya Google Drive havuzuna yükleniyor..."):
-                try:
-                    file_bytes = uploaded_file.read()
-                    res = upload_file_to_drive(file_bytes, uploaded_file.name, folder_id)
-                    st.success(f"✅ Dosya başarıyla yüklendi! Dosya Adı: {res.get('name')}")
-                    st.markdown(f"[Drive'da Görmek İçin Tıklayın]({res.get('webViewLink')})")
-                except Exception as e:
-                    st.error(f"Yükleme sırasında hata oluştu: {e}")
-
-    st.divider()
-
-    # 3. Havuzdaki Dosyaları Okuma Bölümü
-    st.subheader("2. Havuzdaki Dosyaları Listele")
-    if st.button("Havuzu Yenile / Dosyaları Getir"):
-        with st.spinner("Drive klasörü taranıyor..."):
+        with st.spinner("Dosya yükleniyor... Lütfen bekleyin."):
             try:
-                files = list_files_in_folder(folder_id)
-                if not files:
-                    st.info("Bu klasörde henüz yüklenmiş bir dosya yok.")
-                else:
-                    st.write(f"Bulunan Dosya Sayısı: **{len(files)}**")
-                    for f in files:
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.write(f"📄 **{f.get('name')}**")
-                        with col2:
-                            st.markdown(f"[Aç / İndir]({f.get('webViewLink')})")
+                # DİKKAT: Artık folder_id göndermiyoruz, sistem bunu secrets'tan (hafızadan) otomatik alıyor.
+                file_bytes = uploaded_file.getvalue()
+                uploaded = upload_file_to_drive(
+                    file_bytes=file_bytes,
+                    file_name=uploaded_file.name,
+                    mime_type=uploaded_file.type
+                )
+                st.success(f"✅ '{uploaded_file.name}' başarıyla havuzunuza eklendi!")
             except Exception as e:
-                st.error(f"Dosyalar çekilirken hata oluştu: {e}")
-else:
-    st.warning("Devam etmek için lütfen yukarıdaki kutuya Google Drive Klasör ID'nizi girin.")
+                st.error(f"Yükleme sırasında bir hata oluştu: {e}")
+    else:
+        st.warning("Lütfen yükle butonuna basmadan önce bir dosya seçin.")
+
+st.divider()
+
+# --- BÖLÜM 2: DOSYALARI LİSTELEME VE GÖRÜNTÜLEME ---
+st.subheader("📂 Havuzdaki Materyaller")
+
+if st.button("🔄 Dosyaları Yenile / Listele"):
+    with st.spinner("Drive'daki dosyalar getiriliyor..."):
+        try:
+            # DİKKAT: folder_id göndermiyoruz, sistem secrets'tan kendi alıyor.
+            files = list_files_in_folder()
+            
+            if not files:
+                st.info("Klasörde henüz hiç dosya bulunmuyor. İlk materyali sen yükle!")
+            else:
+                st.success(f"Toplam {len(files)} adet dosya bulundu.")
+                
+                # Dosyaları alt alta ve yanlarında link olacak şekilde sıralıyoruz
+                for file in files:
+                    file_name = file.get('name')
+                    file_link = file.get('webViewLink')
+                    
+                    # Düzenli görünüm için Streamlit kolonları kullanıyoruz
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.write(f"📄 **{file_name}**")
+                    with col2:
+                        # Tıklandığında yeni sekmede dosyayı açan link
+                        st.markdown(f"[🔗 Görüntüle]({file_link})", unsafe_allow_html=True)
+                        
+        except Exception as e:
+            st.error(f"Dosyalar listelenirken bir hata oluştu: {e}")
