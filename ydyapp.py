@@ -4,7 +4,7 @@ import os
 import hashlib
 from drive_utils import upload_file_to_drive, list_files_in_folder
 
-# --- AYARLAR VE VERİTABANI ---
+# --- VERİTABANI VE YÖNETİM FONKSİYONLARI ---
 USER_FILE = "users.json"
 
 def load_users():
@@ -20,22 +20,24 @@ def save_users(users):
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# --- SESSION STATE (OTURUM YÖNETİMİ) ---
+# Sayfa Yapılandırması
+st.set_page_config(page_title="YDY Materyal Havuzu", page_icon="📚", layout="centered")
+
+# --- OTURUM YÖNETİMİ ---
 if "logged_in" not in st.session_state:
     st.session_state.update({
         "logged_in": False, "email": "", "role": ""
     })
 
 # ==========================================
-# 1. GİRİŞ VE KAYIT EKRANLARI (DIŞ KAPI)
+# 1. GİRİŞ VE KAYIT EKRANI (DIŞ KAPI)
 # ==========================================
 if not st.session_state["logged_in"]:
-    st.title("📚 YDY Materyal Havuzu")
+    st.title("📚 EÜ YDY Materyal Havuzu")
     st.write("Lütfen sisteme giriş yapın veya yeni kayıt oluşturun.")
     
     tab1, tab2 = st.tabs(["Giriş Yap", "Kayıt Ol"])
     
-    # --- GİRİŞ YAP ---
     with tab1:
         login_email = st.text_input("E-posta Adresiniz", key="log_email")
         login_pass = st.text_input("Şifreniz", type="password", key="log_pass")
@@ -47,7 +49,6 @@ if not st.session_state["logged_in"]:
             else:
                 st.error("Hatalı e-posta veya şifre!")
 
-    # --- KAYIT OL ---
     with tab2:
         reg_email = st.text_input("E-posta Adresiniz", key="reg_email")
         reg_pass = st.text_input("Şifre Belirleyin", type="password", key="reg_pass")
@@ -68,7 +69,6 @@ if not st.session_state["logged_in"]:
 
     st.divider()
     
-    # --- YÖNETİCİ GİRİŞİ (ŞİFRE İLE) ---
     with st.expander("🛡️ Yönetici Girişi"):
         admin_pass = st.text_input("Yönetici Şifresi", type="password", key="admin_pass")
         if st.button("Yönetici Olarak Gir"):
@@ -96,11 +96,9 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-st.title("📚 YDY Materyal Havuzu")
+st.title("📚 EÜ YDY Materyal Havuzu")
 
-# ==========================================
-# 3. YÖNETİCİ PANELİ
-# ==========================================
+# Yönetici Paneli
 if st.session_state["role"] == "admin":
     st.warning("🛠️ **Yönetici Paneli**")
     users = load_users()
@@ -121,7 +119,7 @@ if st.session_state["role"] == "admin":
     st.divider()
 
 # ==========================================
-# 4. DOSYA YÜKLEME VE YDY KATEGORİ SİSTEMİ (GERÇEK DRIVE API)
+# 3. DOSYA YÜKLEME BÖLÜMÜ (YDY ŞEMASI)
 # ==========================================
 st.subheader("📤 Yeni Materyal Yükle")
 
@@ -151,11 +149,9 @@ if st.session_state["role"] in ["onaylı", "admin"]:
                 try:
                     file_bytes = uploaded_file.getvalue()
                     
-                    # Dosya adına ve açıklamasına etiketleri işliyoruz ki Drive'da da net görünsün
-                    etiketli_isim = f"[{kur_secimi}] [{hafta}] [{materyal_turu}] {uploaded_file.name}"
-                    aciklama = f"Kur: {kur_secimi} | Ders: {omurga} | Alt Beceri: {alt_beceri} | Hafta: {hafta} | Tür: {materyal_turu} | Yükleyen: {st.session_state['email']}"
+                    # Dosya adında etiketlerin ve yükleyicinin saklanması
+                    etiketli_isim = f"[{kur_secimi}] [{hafta}] [{materyal_turu}] ({st.session_state['email']}) {uploaded_file.name}"
                     
-                    # Gerçek Drive API çağrısı
                     upload_file_to_drive(
                         file_bytes=file_bytes,
                         file_name=etiketli_isim,
@@ -172,26 +168,57 @@ else:
 st.divider()
 
 # ==========================================
-# 5. DOSYALARI LİSTELEME VE GÖRÜNTÜLEME
+# 4. FİLTRELEME VE GÖRÜNTÜLEME BÖLÜMÜ
 # ==========================================
-st.subheader("📂 Havuzdaki Materyaller")
+st.subheader("📂 Havuzdaki Materyaller ve Filtreleme")
 
-if st.button("🔄 Dosyaları Listele"):
-    with st.spinner("Drive'daki dosyalar getiriliyor..."):
+# Filtre Seçenekleri
+f_col1, f_col2 = st.columns(2)
+with f_col1:
+    filtre_kur = st.selectbox("Filtre - Kur", ["Tümü", "Alpha", "Beta", "Gamma", "Delta", "Yan Destek / Kulüpler"])
+with f_col2:
+    filtre_hafta = st.selectbox("Filtre - Hafta", ["Tümü"] + [f"{i}. Hafta" for i in range(1, 15)])
+
+if st.button("🔄 Dosyaları Listele ve Filtrele"):
+    with st.spinner("Drive'daki dosyalar taranıyor..."):
         try:
             files = list_files_in_folder()
             if not files:
                 st.info("Klasörde henüz hiç dosya bulunmuyor.")
             else:
-                st.success(f"Toplam {len(files)} adet dosya bulundu.")
+                # Filtreleme mantığı
+                filtrelenmis_dosyalar = []
                 for file in files:
-                    file_name = file.get('name')
-                    file_link = file.get('webViewLink')
+                    fname = file.get('name', '')
                     
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.write(f"📄 **{file_name}**")
-                    with col2:
-                        st.markdown(f"[🔗 Görüntüle]({file_link})", unsafe_allow_html=True)
+                    # Kur filtresi kontrolü
+                    kur_uygun = True
+                    if filtre_kur != "Tümü" and f"[{filtre_kur}]" not in fname:
+                        kur_uygun = False
+                        
+                    # Hafta filtresi kontrolü
+                    hafta_uygun = True
+                    if filtre_hafta != "Tümü" and f"[{filtre_hafta}]" not in fname:
+                        hafta_uygun = False
+                        
+                    if kur_uygun and hafta_uygun:
+                        filtrelenmis_dosyalar.append(file)
+                
+                if not filtrelenmis_dosyalar:
+                    st.warning("Seçtiğiniz kriterlere uygun materyal bulunamadı.")
+                else:
+                    st.success(f"Eşleşen toplam {len(filtrelenmis_dosyalar)} adet dosya listeleniyor.")
+                    st.write("---")
+                    
+                    for file in filtrelenmis_dosyalar:
+                        file_name = file.get('name')
+                        file_link = file.get('webViewLink')
+                        
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.write(f"📄 **{file_name}**")
+                        with col2:
+                            st.markdown(f"[🔗 Görüntüle]({file_link})", unsafe_allow_html=True)
+                            
         except Exception as e:
             st.error(f"Dosyalar listelenirken hata oluştu: {e}")
