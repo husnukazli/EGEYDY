@@ -92,19 +92,68 @@ with st.sidebar:
 
 st.title("📚 Material Share")
 
-# Admin Panel
+# ==========================================
+# ADMIN PANEL (GELİŞMİŞ İSTATİSTİKLER)
+# ==========================================
 if st.session_state["role"] == "admin":
-    st.warning("🛠️ **Admin Approval Panel**")
-    res = supabase.table("app_users").select("*").eq("role", "beklemede").execute()
-    if res.data:
-        for user in res.data:
-            col1, col2 = st.columns([4, 1])
-            col1.write(f"- 👤 **{user.get('ad_soyad', 'No Name')}** ({user['email']})")
-            if col2.button("Approve", key=f"onay_{user['id']}"):
-                supabase.table("app_users").update({"role": "onaylı"}).eq("id", user["id"]).execute()
-                st.rerun()
-    else:
-        st.info("No pending users.")
+    st.warning("🛠️ **Admin Dashboard**")
+    
+    admin_tab1, admin_tab2 = st.tabs(["⏳ Pending Approvals", "📊 Teacher Statistics"])
+    
+    # 1. Onay Bekleyenler Sekmesi
+    with admin_tab1:
+        res_pending = supabase.table("app_users").select("*").eq("role", "beklemede").execute()
+        if res_pending.data:
+            for user in res_pending.data:
+                col1, col2 = st.columns([4, 1])
+                col1.write(f"- 👤 **{user.get('ad_soyad', 'No Name')}** ({user['email']})")
+                if col2.button("Approve", key=f"onay_{user['id']}"):
+                    supabase.table("app_users").update({"role": "onaylı"}).eq("id", user["id"]).execute()
+                    st.rerun()
+        else:
+            st.info("No pending users.")
+            
+    # 2. Öğretmen İstatistikleri Sekmesi
+    with admin_tab2:
+        res_approved = supabase.table("app_users").select("*").eq("role", "onaylı").execute()
+        if res_approved.data:
+            teacher_list = [u.get("ad_soyad", "Unknown") for u in res_approved.data]
+            selected_teacher = st.selectbox("Select a Teacher to View Stats", ["Select..."] + teacher_list)
+            
+            if selected_teacher != "Select...":
+                res_files = supabase.table("files").select("*").eq("uploaded_by", selected_teacher).execute()
+                teacher_files = res_files.data
+                
+                if teacher_files:
+                    st.success(f"**{selected_teacher}** has shared a total of **{len(teacher_files)}** materials.")
+                    
+                    # Verileri Kur ve Beceriye göre gruplama mantığı
+                    stats_dict = {}
+                    for f in teacher_files:
+                        level = f.get('kur', 'Unknown Level')
+                        skill = f.get('alt_beceri', 'Unknown Focus')
+                        
+                        if level not in stats_dict:
+                            stats_dict[level] = {}
+                        if skill not in stats_dict[level]:
+                            stats_dict[level][skill] = 0
+                        stats_dict[level][skill] += 1
+                    
+                    # Gruplanan verileri ekrana şık bir şekilde yazdırma
+                    c1, c2, c3 = st.columns(3)
+                    col_idx = 0
+                    cols = [c1, c2, c3]
+                    
+                    for level, skills in stats_dict.items():
+                        with cols[col_idx % 3].expander(f"📁 {level} ({sum(skills.values())} files)", expanded=True):
+                            for skill, count in skills.items():
+                                st.write(f"- {skill}: **{count}**")
+                        col_idx += 1
+                else:
+                    st.info(f"**{selected_teacher}** hasn't uploaded any materials yet.")
+        else:
+            st.info("No approved teachers found in the system.")
+            
     st.divider()
 
 # TABS
@@ -146,7 +195,7 @@ with tab_upload:
                         supabase.table("files").insert({
                             "file_name": uploaded_file.name, 
                             "file_url": final_file_url, 
-                            "file_path": file_path, # Storage'dan silmek için gerekli
+                            "file_path": file_path, 
                             "kur": f_level, 
                             "omurga": f_class, 
                             "alt_beceri": f_focus, 
@@ -181,7 +230,7 @@ with tab_search:
         s_type = st.selectbox("Type of Material", ["All", "Link (Kahoot, Bamboozle, etc.)", "Worksheet", "Exam Practice", "Presentation", "Games & Ideas"], key="ara_turu")
 
     if st.button("🔄 Search & List", use_container_width=True):
-        st.session_state.edit_mode = None # Yeni aramada düzenleme modunu sıfırla
+        st.session_state.edit_mode = None 
         
     with st.spinner("Searching..."):
         query = supabase.table("files").select("*")
@@ -202,8 +251,8 @@ with tab_search:
                 # EĞER YÖNETİCİ DÜZENLEME (EDIT) MODUNDAYSA
                 if st.session_state.edit_mode == file['id']:
                     with st.expander(f"✏️ Editing: {file['file_name']}", expanded=True):
-                        e_level = st.selectbox("New Level", ["Alpha", "Beta", "Gamma", "Delta"], index=["Alpha", "Beta", "Gamma", "Delta"].index(file['kur']), key=f"el_{file['id']}")
-                        e_class = st.selectbox("New Class", ["Integrated Skills 1", "Integrated Skills 2"], index=["Integrated Skills 1", "Integrated Skills 2"].index(file['omurga']), key=f"ec_{file['id']}")
+                        e_level = st.selectbox("New Level", ["Alpha", "Beta", "Gamma", "Delta"], index=["Alpha", "Beta", "Gamma", "Delta"].index(file['kur']) if file['kur'] in ["Alpha", "Beta", "Gamma", "Delta"] else 0, key=f"el_{file['id']}")
+                        e_class = st.selectbox("New Class", ["Integrated Skills 1", "Integrated Skills 2"], index=["Integrated Skills 1", "Integrated Skills 2"].index(file['omurga']) if file['omurga'] in ["Integrated Skills 1", "Integrated Skills 2"] else 0, key=f"ec_{file['id']}")
                         focus_opts = ["Speaking", "Reading", "Listening", "Writing", "Vocabulary", "Use of English"]
                         safe_focus_idx = focus_opts.index(file['alt_beceri']) if file['alt_beceri'] in focus_opts else 0
                         e_focus = st.selectbox("New Focus", focus_opts, index=safe_focus_idx, key=f"ef_{file['id']}")
@@ -230,7 +279,6 @@ with tab_search:
                         else:
                             c2.markdown(f"[👁️ View]({file['file_url']}) | [⬇️ Download]({file['file_url']}?download=)", unsafe_allow_html=True)
                         
-                        # SİLME VE DÜZENLEME YETKİLERİ
                         if st.session_state["role"] == "admin" or st.session_state["ad_soyad"] == file['uploaded_by']:
                             with c3:
                                 if st.session_state["role"] == "admin":
@@ -240,10 +288,8 @@ with tab_search:
                                         
                                 if st.button("🗑️ Delete", key=f"del_{file['id']}"):
                                     try:
-                                        # 1. Storage'dan sil
                                         if file.get("file_path"):
                                             supabase.storage.from_("materyaller").remove([file["file_path"]])
-                                        # 2. Veritabanından sil
                                         supabase.table("files").delete().eq("id", file['id']).execute()
                                         st.rerun()
                                     except Exception as e:
