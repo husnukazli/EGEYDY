@@ -93,12 +93,12 @@ with st.sidebar:
 st.title("📚 Material Share")
 
 # ==========================================
-# ADMIN PANEL (GELİŞMİŞ İSTATİSTİKLER)
+# ADMIN PANEL (ONAY, İSTATİSTİK VE STORAGE)
 # ==========================================
 if st.session_state["role"] == "admin":
     st.warning("🛠️ **Admin Dashboard**")
     
-    admin_tab1, admin_tab2 = st.tabs(["⏳ Pending Approvals", "📊 Teacher Statistics"])
+    admin_tab1, admin_tab2, admin_tab3 = st.tabs(["⏳ Pending Approvals", "📊 Teacher Statistics", "💾 Storage Health"])
     
     # 1. Onay Bekleyenler Sekmesi
     with admin_tab1:
@@ -127,7 +127,6 @@ if st.session_state["role"] == "admin":
                 if teacher_files:
                     st.success(f"**{selected_teacher}** has shared a total of **{len(teacher_files)}** materials.")
                     
-                    # Verileri Kur ve Beceriye göre gruplama mantığı
                     stats_dict = {}
                     for f in teacher_files:
                         level = f.get('kur', 'Unknown Level')
@@ -139,7 +138,6 @@ if st.session_state["role"] == "admin":
                             stats_dict[level][skill] = 0
                         stats_dict[level][skill] += 1
                     
-                    # Gruplanan verileri ekrana şık bir şekilde yazdırma
                     c1, c2, c3 = st.columns(3)
                     col_idx = 0
                     cols = [c1, c2, c3]
@@ -153,6 +151,36 @@ if st.session_state["role"] == "admin":
                     st.info(f"**{selected_teacher}** hasn't uploaded any materials yet.")
         else:
             st.info("No approved teachers found in the system.")
+            
+    # 3. Storage Health (Kapasite) Sekmesi
+    with admin_tab3:
+        try:
+            res_all_files = supabase.table("files").select("*").execute()
+            total_files = len(res_all_files.data) if res_all_files.data else 0
+            
+            # Ortalama bir eğitim dosyası (PDF/Word/PPT) ~2 MB kabul edilerek hesaplanır
+            avg_mb_per_file = 2 
+            total_capacity_mb = 1024 # 1 GB
+            max_files = total_capacity_mb // avg_mb_per_file
+            
+            used_mb = total_files * avg_mb_per_file
+            remaining_mb = total_capacity_mb - used_mb
+            usage_percent = min(total_files / max_files, 1.0)
+            
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.metric("Total Uploaded Files", f"{total_files}")
+            sc2.metric("Estimated Used Space", f"~{used_mb} MB")
+            sc3.metric("Estimated Remaining", f"~{remaining_mb} MB")
+            
+            st.markdown(f"**Storage Capacity Usage (Estimated limit: ~{max_files} files)**")
+            st.progress(usage_percent)
+            
+            if usage_percent > 0.8:
+                st.error("⚠️ Storage is getting full! Consider deleting old or unnecessary files.")
+            else:
+                st.success("✅ System storage health is excellent.")
+        except Exception as e:
+            st.error(f"Could not load storage stats: {e}")
             
     st.divider()
 
