@@ -220,7 +220,7 @@ with tab_upload:
                         supabase.storage.from_("materyaller").upload(
                             path=file_path, 
                             file=uploaded_file.getvalue(), 
-                            file_options={"content_type": content_type, "upsert": True}
+                            file_options={"content_type": content_type, "upsert": "true"}
                         )
                         final_file_url = supabase.storage.from_("materyaller").get_public_url(file_path)
                         
