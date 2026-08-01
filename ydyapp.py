@@ -227,7 +227,6 @@ with tab_upload:
                         supabase.table("files").insert({
                             "file_name": uploaded_file.name, 
                             "file_url": final_file_url, 
-                            "file_path": file_path, 
                             "kur": f_level, 
                             "omurga": f_class, 
                             "alt_beceri": f_focus, 
@@ -318,8 +317,6 @@ with tab_search:
                                         
                                 if st.button("🗑️ Delete", key=f"del_{file['id']}"):
                                     try:
-                                        if file.get("file_path"):
-                                            supabase.storage.from_("materyaller").remove([file["file_path"]])
                                         supabase.table("files").delete().eq("id", file['id']).execute()
                                         st.rerun()
                                     except Exception as e:
