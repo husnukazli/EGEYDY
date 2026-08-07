@@ -2,6 +2,8 @@ import streamlit as st
 import hashlib
 import uuid
 import os
+import csv
+import io
 from supabase import create_client, Client
 
 # --- SUPABASE CONNECTION ---
@@ -95,14 +97,14 @@ with st.sidebar:
 st.title("📚 Material Share")
 
 # ==========================================
-# ADMIN PANEL (ONAY, İSTATİSTİK VE STORAGE)
+# ADMIN PANEL
 # ==========================================
 if st.session_state["role"] == "admin":
     st.warning("🛠️ **Admin Dashboard**")
     
-    admin_tab1, admin_tab2, admin_tab3 = st.tabs(["⏳ Pending Approvals", "📊 Teacher Statistics", "💾 Storage Health"])
+    # 4. Sekme (System Index) eklendi
+    admin_tab1, admin_tab2, admin_tab3, admin_tab4 = st.tabs(["⏳ Pending Approvals", "📊 Teacher Statistics", "💾 Storage Health", "🗂️ System Index"])
     
-    # 1. Onay Bekleyenler Sekmesi
     with admin_tab1:
         res_pending = supabase.table("app_users").select("*").eq("role", "beklemede").execute()
         if res_pending.data:
@@ -115,7 +117,6 @@ if st.session_state["role"] == "admin":
         else:
             st.info("No pending users.")
             
-    # 2. Öğretmen İstatistikleri Sekmesi
     with admin_tab2:
         res_approved = supabase.table("app_users").select("*").eq("role", "onaylı").execute()
         if res_approved.data:
@@ -154,7 +155,6 @@ if st.session_state["role"] == "admin":
         else:
             st.info("No approved teachers found in the system.")
             
-    # 3. Storage Health (Kapasite) Sekmesi
     with admin_tab3:
         try:
             res_all_files = supabase.table("files").select("*").execute()
@@ -183,10 +183,57 @@ if st.session_state["role"] == "admin":
         except Exception as e:
             st.error(f"Could not load storage stats: {e}")
             
+    # YENİ SEKME: SYSTEM INDEX (İndirme & Tablo)
+    with admin_tab4:
+        st.markdown("### 🗂️ Material Index")
+        st.write("Tüm yüklenen materyallerin detaylı indeksini Excel'de açabileceğiniz bir formatta (CSV) indirebilirsiniz. (Eğer PDF almak isterseniz, aşağıdaki tabloyu tarayıcınızın 'Yazdır -> PDF olarak kaydet' özelliği ile yazdırabilirsiniz).")
+        
+        try:
+            res_all_files = supabase.table("files").select("*").execute()
+            if res_all_files.data:
+                # Tablo verilerini hazırlama (CSV formatı için)
+                output = io.StringIO()
+                writer = csv.writer(output)
+                # Başlıklar
+                writer.writerow(['File Name', 'Level', 'Class', 'Focus', 'Week', 'Material Type', 'Uploaded By', 'Download URL'])
+                
+                # Sadece göstereceğimiz temiz veriyi bir listeye alalım (Streamlit Dataframe için)
+                display_data = []
+                for f in res_all_files.data:
+                    writer.writerow([f.get('file_name',''), f.get('kur',''), f.get('omurga',''), f.get('alt_beceri',''), f.get('hafta',''), f.get('materyal_turu',''), f.get('uploaded_by',''), f.get('file_url','')])
+                    display_data.append({
+                        "Dosya Adı": f.get('file_name',''),
+                        "Kur": f.get('kur',''),
+                        "Omurga": f.get('omurga',''),
+                        "Alt Beceri": f.get('alt_beceri',''),
+                        "Hafta": f.get('hafta',''),
+                        "Tür": f.get('materyal_turu',''),
+                        "Yükleyen": f.get('uploaded_by','')
+                    })
+
+                # Türkçe karakterlerin Excel'de bozulmaması için BOM (\ufeff) ekliyoruz
+                csv_data = '\ufeff' + output.getvalue()
+                
+                st.download_button(
+                    label="📥 Tüm Listeyi İndir (Excel / CSV)",
+                    data=csv_data,
+                    file_name="materyal_indeksi.csv",
+                    mime="text/csv",
+                )
+                
+                st.dataframe(display_data, use_container_width=True)
+            else:
+                st.info("Sistemde listelenecek dosya bulunmuyor.")
+        except Exception as e:
+            st.error(f"Index oluşturulurken hata oluştu: {e}")
+
     st.divider()
 
 # TABS
 tab_upload, tab_search = st.tabs(["📤 Upload Material", "🔍 Search & Download"])
+
+# Ortak Focus Menüsü Seçenekleri
+base_focus_options = ["Speaking", "Reading", "Listening", "Writing", "Vocabulary", "Use of English"]
 
 # ==========================================
 # UPLOAD TAB
@@ -197,7 +244,18 @@ with tab_upload:
         
         f_level = st.selectbox("1. Level", ["Select...", "Alpha", "Beta", "Gamma", "Delta"], key="yk_kur")
         f_class = st.selectbox("2. Class", ["Select...", "Integrated Skills 1", "Integrated Skills 2"], key="yk_omurga")
-        f_focus = st.selectbox("3. Focus", ["Speaking", "Reading", "Listening", "Writing", "Vocabulary", "Use of English"], key="yk_beceri")
+        
+        # --- DİNAMİK FOCUS SEÇENEKLERİ (UPLOAD) ---
+        if f_class == "Integrated Skills 1":
+            upload_focus_opts = base_focus_options + ["A", "B", "C"]
+        elif f_class == "Integrated Skills 2":
+            upload_focus_opts = base_focus_options + ["D", "E", "Global Skills"] # E eklendi
+        else:
+            upload_focus_opts = base_focus_options
+            
+        f_focus = st.selectbox("3. Focus", upload_focus_opts, key="yk_beceri")
+        # ------------------------------------------
+        
         f_week = st.selectbox("4. Week", [f"Week {i}" for i in range(1, 15)], key="yk_hafta")
         f_type = st.selectbox("5. Type of Material", ["Link (Kahoot, Bamboozle, etc.)", "Worksheet", "Exam Practice", "Presentation", "Games & Ideas"], key="yk_turu")
         
@@ -254,7 +312,17 @@ with tab_search:
     with col1:
         s_level = st.selectbox("Level", ["All", "Alpha", "Beta", "Gamma", "Delta"], key="ara_kur")
         s_class = st.selectbox("Class", ["All", "Integrated Skills 1", "Integrated Skills 2"], key="ara_omurga")
-        s_focus = st.selectbox("Focus", ["All", "Speaking", "Reading", "Listening", "Writing", "Vocabulary", "Use of English"], key="ara_beceri")
+        
+        # --- DİNAMİK FOCUS SEÇENEKLERİ (ARAMA) ---
+        if s_class == "Integrated Skills 1":
+            search_focus_opts = ["All"] + base_focus_options + ["A", "B", "C"]
+        elif s_class == "Integrated Skills 2":
+            search_focus_opts = ["All"] + base_focus_options + ["D", "E", "Global Skills"] # E eklendi
+        else:
+            search_focus_opts = ["All"] + base_focus_options + ["A", "B", "C", "D", "E", "Global Skills"] # E eklendi
+            
+        s_focus = st.selectbox("Focus", search_focus_opts, key="ara_beceri")
+        # -----------------------------------------
             
     with col2:
         s_week = st.selectbox("Week", ["All"] + [f"Week {i}" for i in range(1, 15)], key="ara_hafta")
@@ -279,13 +347,21 @@ with tab_search:
             st.success(f"{len(files)} material(s) found.")
             for file in files:
                 
+                # ===== DÜZENLEME (EDIT) MODU =====
                 if st.session_state.edit_mode == file['id']:
                     with st.expander(f"✏️ Editing: {file['file_name']}", expanded=True):
                         e_level = st.selectbox("New Level", ["Alpha", "Beta", "Gamma", "Delta"], index=["Alpha", "Beta", "Gamma", "Delta"].index(file['kur']) if file['kur'] in ["Alpha", "Beta", "Gamma", "Delta"] else 0, key=f"el_{file['id']}")
                         e_class = st.selectbox("New Class", ["Integrated Skills 1", "Integrated Skills 2"], index=["Integrated Skills 1", "Integrated Skills 2"].index(file['omurga']) if file['omurga'] in ["Integrated Skills 1", "Integrated Skills 2"] else 0, key=f"ec_{file['id']}")
-                        focus_opts = ["Speaking", "Reading", "Listening", "Writing", "Vocabulary", "Use of English"]
-                        safe_focus_idx = focus_opts.index(file['alt_beceri']) if file['alt_beceri'] in focus_opts else 0
-                        e_focus = st.selectbox("New Focus", focus_opts, index=safe_focus_idx, key=f"ef_{file['id']}")
+                        
+                        # --- DİNAMİK FOCUS SEÇENEKLERİ (EDIT) ---
+                        if e_class == "Integrated Skills 1":
+                            edit_focus_opts = base_focus_options + ["A", "B", "C"]
+                        else:
+                            edit_focus_opts = base_focus_options + ["D", "E", "Global Skills"] # E eklendi
+                        
+                        safe_focus_idx = edit_focus_opts.index(file['alt_beceri']) if file['alt_beceri'] in edit_focus_opts else 0
+                        e_focus = st.selectbox("New Focus", edit_focus_opts, index=safe_focus_idx, key=f"ef_{file['id']}")
+                        # -----------------------------------------
                         
                         colA, colB = st.columns(2)
                         with colA:
@@ -298,6 +374,7 @@ with tab_search:
                                 st.session_state.edit_mode = None
                                 st.rerun()
                 
+                # ===== NORMAL GÖRÜNTÜLEME MODU =====
                 else:
                     with st.container():
                         c1, c2, c3 = st.columns([6, 2, 2])
